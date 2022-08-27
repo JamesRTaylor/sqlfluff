@@ -4,7 +4,7 @@
 from itertools import chain
 import logging
 from dataclasses import dataclass
-from typing import Iterator, List, Optional, Sequence, Tuple, Union, Type
+from typing import Iterator, List, Optional, Sequence, Tuple, Union, Type, cast
 
 from sqlfluff.core.parser import BaseSegment, RawSegment
 from sqlfluff.core.parser.segments.raw import WhitespaceSegment
@@ -171,18 +171,28 @@ class ReflowPoint(_ReflowElement):
                         for fix in fixes:
                             # Does it contain the insertion?
                             # TODO: This feels ugly - why is eq for BaseSegment defined so differently?!!?!???!? Shouldn't it all use uuids?
-                            if insertion and fix.edit and insertion.uuid in [elem.uuid for elem in fix.edit]:
+                            if (
+                                insertion
+                                and fix.edit
+                                and insertion.uuid in [elem.uuid for elem in fix.edit]
+                            ):
                                 break
                         else:
                             reflow_logger.warning("Fixes %s", fixes)
                             raise ValueError(f"Couldn't find insertion for {insertion}")
                         # Mutate the existing fix
                         assert fix
-                        assert fix.edit # It's going to be an edit if we've picked it up.
+                        assert (
+                            fix.edit
+                        )  # It's going to be an edit if we've picked it up.
                         if existing_fix == "before":
-                            fix.edit = [WhitespaceSegment()] + fix.edit
+                            fix.edit = [
+                                cast(BaseSegment, WhitespaceSegment())
+                            ] + fix.edit
                         elif existing_fix == "after":
-                            fix.edit = fix.edit + [WhitespaceSegment()]
+                            fix.edit = fix.edit + [
+                                cast(BaseSegment, WhitespaceSegment())
+                            ]
                     else:
                         reflow_logger.debug("Not Detected existing fix. Creating new")
                         if after:
@@ -422,14 +432,14 @@ class ReflowSequence:
                 "Not expected removal of whitespace in ReflowSequence."
             )
         merged_point = ReflowPoint(
-            segments=self.elements[removal_idx - 1].segments
-            + self.elements[removal_idx + 1].segments,
+            segments=list(self.elements[removal_idx - 1].segments)
+            + list(self.elements[removal_idx + 1].segments),
             root_segment=self.root_segment,
         )
         return ReflowSequence(
-            elements=self.elements[: removal_idx - 1]
+            elements=list(self.elements[: removal_idx - 1])
             + [merged_point]
-            + self.elements[removal_idx + 2 :],
+            + list(self.elements[removal_idx + 2 :]),
             root_segment=self.root_segment,
         )
 
@@ -453,16 +463,16 @@ class ReflowSequence:
                 point_idx = target_idx + (1 if pos == "before" else -1)
             new_segments = (
                 ([insertion] if pos == "before" else [])
-                + self.elements[point_idx].segments
+                + list(self.elements[point_idx].segments)
                 + ([insertion] if pos == "after" else [])
             )
             new_point = ReflowPoint(
                 segments=new_segments, root_segment=self.root_segment
             )
             return ReflowSequence(
-                elements=self.elements[:point_idx]
+                elements=list(self.elements[:point_idx])
                 + [new_point]
-                + self.elements[point_idx + 1 :],
+                + list(self.elements[point_idx + 1 :]),
                 root_segment=self.root_segment,
             )
         else:
@@ -478,30 +488,31 @@ class ReflowSequence:
                 )
             elif pos == "before":
                 return ReflowSequence(
-                    elements=self.elements[:target_idx]
+                    elements=list(self.elements[:target_idx])
                     + [new_block, ReflowPoint([], root_segment=self.root_segment)]
-                    + self.elements[target_idx:],
+                    + list(self.elements[target_idx:]),
                     root_segment=self.root_segment,
                 )
             elif pos == "after":
                 return ReflowSequence(
-                    elements=self.elements[: target_idx + 1]
+                    elements=list(self.elements[: target_idx + 1])
                     + [ReflowPoint([], root_segment=self.root_segment), new_block]
-                    + self.elements[target_idx + 1 :],
+                    + list(self.elements[target_idx + 1 :]),
                     root_segment=self.root_segment,
                 )
 
     def _iter_points_with_constraints(
         self,
-    ) -> Iterator[Tuple[ReflowBlock, Optional[ReflowPoint], Optional[ReflowPoint]]]:
+    ) -> Iterator[Tuple[ReflowPoint, Optional[ReflowBlock], Optional[ReflowBlock]]]:
         for idx, elem in enumerate(self.elements):
             # Only evaluate points.
             if isinstance(elem, ReflowPoint):
-                pre, post = None, None
+                pre = None
+                post = None
                 if idx > 0:
-                    pre = self.elements[idx - 1]
+                    pre = cast(ReflowBlock, self.elements[idx - 1])
                 if idx < len(self.elements) - 2:
-                    post = self.elements[idx + 1]
+                    post = cast(ReflowBlock, self.elements[idx + 1])
                 yield elem, pre, post
 
     def respace(self, fixes: Optional[List[LintFix]] = None) -> List[LintFix]:
@@ -514,6 +525,7 @@ class ReflowSequence:
                 which is due to be removed, implying that the respace should be
                 done as though this segment is not there.
         """
+        fixes = fixes or []
         for point, pre, post in self._iter_points_with_constraints():
             # Pass through the fixes because they may get mutated
             # TODO: This feels a bit gross - can we do better?
