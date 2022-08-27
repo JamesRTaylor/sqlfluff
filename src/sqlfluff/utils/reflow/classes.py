@@ -136,8 +136,8 @@ class ReflowPoint(_ReflowElement):
                     prev_seg = self.segments[ws_idx - 1]
                     if (
                         prev_seg.is_type("newline")
-                        and prev_seg.pos_marker.end_point_marker
-                        != ws_seg.pos_marker.start_point_marker
+                        and prev_seg.pos_marker.end_point_marker()
+                        != ws_seg.pos_marker.start_point_marker()
                     ):
                         reflow_logger.debug(
                             "    Removing non-contiguous whitespace " "post removal."
@@ -560,6 +560,6 @@ class ReflowSequence:
         """Fix any trailing whitespace detected."""
         fixes = []
         for elem in self.elements:
-            if isinstance(elem, ReflowPoint):
-                fixes.extend(elem.trailing_whitespace_fixes())
+            if isinstance(elem, ReflowPoint) and any(seg.is_type('newline') for seg in elem.segments):
+                fixes.extend(elem.respace())
         return fixes
